@@ -873,6 +873,15 @@ MIGRATIONS: tuple[tuple[int, Callable[[dict[str, Any], bool], None]], ...] = (
     # 51 -> 52: browser.backend + browser.extension_control dropped, AGENT_BROWSER_* .env settings ->
     # browser.* (see config_migrations_browser.migrate_to_52).
     (52, migrate_to_52),
+    # 52 → 53: the boolean `updates.pre_update_backup: false` that cli-config.yaml.example seeded
+    # (and old defaults wrote) turned off the quick pre-update snapshot once #65754 made it mean
+    # "off"; before that it only skipped the full zip. Drop it so the `quick` default applies. The
+    # opt-out users type is the string `off` (or `config set ... false`, which stores "false").
+    (53, functools.partial(
+        _rewrite_key, section="updates", key="pre_update_backup", match=lambda cur: cur is False, new=None,
+        added="removed updates.pre_update_backup: false (the old template value)",
+        message=("  ✓ Removed updates.pre_update_backup: false copied from the old config template; "
+                 "`hermes update` takes the quick pre-update snapshot again. Set it to `off` to opt out."))),
 )
 
 #: Steps triggered by a legacy key or identifier (a renamed or retired key, a removed plugin or
@@ -883,8 +892,9 @@ MIGRATIONS: tuple[tuple[int, Callable[[dict[str, Any], bool], None]], ...] = (
 #: decides by a value or an absence that, in such a file, is the user's own choice. v13 is left
 #: out: it clears OPENAI_MODEL from .env, a generic name Hermes never reads but the user's tools may.
 #: v41 is left out too: it rewrites profile SOUL.md on a heading match, an artifact whose
-#: provenance the config stamp says nothing about.
-LEGACY_KEY_STEPS = frozenset({12, 14, 16, 17, 29, 33, 38, 39, 42, 43, 46, 50, 51, 52})
+#: provenance the config stamp says nothing about. v53 is in: a boolean `pre_update_backup: false` is the
+#: legacy spelling the old template seeded; the opt-out users type is the string `off`.
+LEGACY_KEY_STEPS = frozenset({12, 14, 16, 17, 29, 33, 38, 39, 42, 43, 46, 50, 51, 52, 53})
 
 #: Legacy-key steps that run on every migration pass whatever the stamp says, because a stamp at
 #: or past their version does not prove they ran: unreleased builds of the gateway-runtime branch

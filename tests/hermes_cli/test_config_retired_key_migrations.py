@@ -100,3 +100,32 @@ class TestRetiredKeysWhateverTheStamp:
         assert config_path.read_bytes() == settled
         from hermes_cli.config_migrations import LEGACY_KEY_STEPS, STAMP_INDEPENDENT_STEPS
         assert STAMP_INDEPENDENT_STEPS <= LEGACY_KEY_STEPS
+
+
+class TestTemplateSeededUpdateBackup:
+    """The template the installers copied set `pre_update_backup: false`, which turned the quick
+    pre-update snapshot off once false meant "off". v53 drops the boolean; a typed opt-out stays."""
+
+    def _migrate(self, tmp_path, monkeypatch, backup, *, version: int | None = 52):
+        from hermes_cli.config_migrations import run_migrations
+
+        config_path = tmp_path / "config.yaml"
+        doc = {"agent": {"max_turns": 500}, "updates": {"pre_update_backup": backup, "backup_keep": 5}}
+        config_path.write_text(yaml.safe_dump(doc if version is None else {"_config_version": version, **doc}),
+                               encoding="utf-8")
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        run_migrations(version or 0, {"env_added": [], "config_added": [], "warnings": []}, quiet=True,
+                       unversioned=version is None)
+        return yaml.safe_load(config_path.read_text(encoding="utf-8"))
+
+    def test_seeded_boolean_false_is_dropped(self, tmp_path, monkeypatch):
+        raw = self._migrate(tmp_path, monkeypatch, False)
+        assert "pre_update_backup" not in raw["updates"] and raw["updates"]["backup_keep"] == 5
+        assert raw["agent"]["max_turns"] == 500
+
+    def test_typed_opt_outs_are_kept(self, tmp_path, monkeypatch):
+        for typed in ("off", "false", 0):
+            assert self._migrate(tmp_path, monkeypatch, typed)["updates"]["pre_update_backup"] == typed
+
+    def test_unversioned_seeded_config_is_migrated_too(self, tmp_path, monkeypatch):
+        assert "pre_update_backup" not in self._migrate(tmp_path, monkeypatch, False, version=None)["updates"]
